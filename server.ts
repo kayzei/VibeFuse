@@ -3,6 +3,8 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import { WebSocketServer, WebSocket } from "ws";
+import { createServer } from "http";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +30,16 @@ db.exec(`
     cover_url TEXT,
     audio_url TEXT,
     is_local BOOLEAN DEFAULT 0,
-    plays INTEGER DEFAULT 0
+    plays INTEGER DEFAULT 0,
+    is_verified BOOLEAN DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS badges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    badge_name TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
   );
 
   CREATE TABLE IF NOT EXISTS tips (
@@ -47,26 +58,88 @@ db.exec(`
     is_public BOOLEAN DEFAULT 1,
     FOREIGN KEY(owner_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    title TEXT,
+    target_hours INTEGER,
+    current_hours REAL DEFAULT 0,
+    status TEXT DEFAULT 'active',
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS njebele (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    content TEXT,
+    track_id INTEGER,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
 `);
 
 // Seed some mock data if empty
 const trackCount = db.prepare("SELECT COUNT(*) as count FROM tracks").get() as { count: number };
 if (trackCount.count === 0) {
-  const insertTrack = db.prepare("INSERT INTO tracks (title, artist, album, genre, duration, cover_url, audio_url, is_local) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+  const insertTrack = db.prepare("INSERT INTO tracks (title, artist, album, genre, duration, cover_url, audio_url, is_local, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
   
   // Zambian Artists Mock Data
-  insertTrack.run("Mother Tongue", "Slapdee", "Mother Tongue", "Hip Hop", 210, "https://picsum.photos/seed/slapdee/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 1);
-  insertTrack.run("Beautiful Night", "Macky 2", "Olijaba", "Afrobeats", 195, "https://picsum.photos/seed/macky2/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", 1);
-  insertTrack.run("Coordinate", "Chef 187", "Broke Nolunkumbwa", "Hip Hop", 225, "https://picsum.photos/seed/chef187/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", 1);
-  insertTrack.run("Siliya", "Cleo Ice Queen", "Leaders of the New School", "Hip Hop", 180, "https://picsum.photos/seed/cleo/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3", 1);
-  insertTrack.run("Midnight City", "M83", "Hurry Up, We're Dreaming", "Synth-pop", 243, "https://picsum.photos/seed/m83/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3", 0);
+  insertTrack.run("Mother Tongue", "Slapdee", "Mother Tongue", "Hip Hop", 210, "https://picsum.photos/seed/slapdee/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 1, 1);
+  insertTrack.run("Beautiful Night", "Macky 2", "Olijaba", "Afrobeats", 195, "https://picsum.photos/seed/macky2/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", 1, 1);
+  insertTrack.run("Coordinate", "Chef 187", "Broke Nolunkumbwa", "Hip Hop", 225, "https://picsum.photos/seed/chef187/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", 1, 1);
+  insertTrack.run("Siliya", "Cleo Ice Queen", "Leaders of the New School", "Hip Hop", 180, "https://picsum.photos/seed/cleo/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3", 1, 0);
+  insertTrack.run("Midnight City", "M83", "Hurry Up, We're Dreaming", "Synth-pop", 243, "https://picsum.photos/seed/m83/400/400", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3", 0, 0);
 }
 
 async function startServer() {
   const app = express();
+  const server = createServer(app);
+  const wss = new WebSocketServer({ server });
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Vibe-Sync Rooms
+  const rooms = new Map<string, Set<WebSocket>>();
+
+  wss.on("connection", (ws) => {
+    let currentRoom: string | null = null;
+
+    ws.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+
+      if (message.type === "join") {
+        const { roomCode } = message;
+        if (!rooms.has(roomCode)) {
+          rooms.set(roomCode, new Set());
+        }
+        rooms.get(roomCode)!.add(ws);
+        currentRoom = roomCode;
+        console.log(`User joined room: ${roomCode}`);
+      }
+
+      if (message.type === "sync") {
+        if (currentRoom && rooms.has(currentRoom)) {
+          rooms.get(currentRoom)!.forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(message));
+            }
+          });
+        }
+      }
+    });
+
+    ws.on("close", () => {
+      if (currentRoom && rooms.has(currentRoom)) {
+        rooms.get(currentRoom)!.delete(ws);
+        if (rooms.get(currentRoom)!.size === 0) {
+          rooms.delete(currentRoom);
+        }
+      }
+    });
+  });
 
   // API Routes
   app.get("/api/tracks", (req, res) => {
@@ -88,6 +161,32 @@ async function startServer() {
   app.post("/api/tracks/:id/play", (req, res) => {
     const { id } = req.params;
     db.prepare("UPDATE tracks SET plays = plays + 1 WHERE id = ?").run(id);
+    
+    // Check for badges (Gamification)
+    const userId = 1; // Mock user
+    const totalPlays = db.prepare("SELECT SUM(plays) as total FROM tracks").get() as { total: number };
+    
+    if (totalPlays.total >= 100) {
+      const exists = db.prepare("SELECT id FROM badges WHERE user_id = ? AND badge_name = ?").get(userId, "LSK Hustler");
+      if (!exists) db.prepare("INSERT INTO badges (user_id, badge_name) VALUES (?, ?)").run(userId, "LSK Hustler");
+    }
+    if (totalPlays.total >= 500) {
+      const exists = db.prepare("SELECT id FROM badges WHERE user_id = ? AND badge_name = ?").get(userId, "UNZA Scholar");
+      if (!exists) db.prepare("INSERT INTO badges (user_id, badge_name) VALUES (?, ?)").run(userId, "UNZA Scholar");
+    }
+
+    res.json({ success: true });
+  });
+
+  app.get("/api/user/:id/badges", (req, res) => {
+    const { id } = req.params;
+    const badges = db.prepare("SELECT badge_name FROM badges WHERE user_id = ?").all(id);
+    res.json(badges.map((b: any) => b.badge_name));
+  });
+
+  app.post("/api/artists/verify", (req, res) => {
+    const { artistName } = req.body;
+    db.prepare("UPDATE tracks SET is_verified = 1 WHERE artist = ?").run(artistName);
     res.json({ success: true });
   });
 
@@ -119,6 +218,34 @@ async function startServer() {
     });
   });
 
+  // Njebele (Social Feed)
+  app.get("/api/njebele", (req, res) => {
+    const posts = db.prepare("SELECT * FROM njebele ORDER BY timestamp DESC LIMIT 50").all();
+    res.json(posts);
+  });
+
+  app.post("/api/njebele", (req, res) => {
+    const { user_id, username, content, track_id } = req.body;
+    db.prepare("INSERT INTO njebele (user_id, username, content, track_id) VALUES (?, ?, ?, ?)").run(
+      user_id || 1, username || "ZedViber", content, track_id
+    );
+    res.json({ success: true });
+  });
+
+  // Goals (Hustle)
+  app.get("/api/goals", (req, res) => {
+    const goals = db.prepare("SELECT * FROM goals").all();
+    res.json(goals);
+  });
+
+  app.post("/api/goals", (req, res) => {
+    const { user_id, title, target_hours } = req.body;
+    db.prepare("INSERT INTO goals (user_id, title, target_hours) VALUES (?, ?, ?)").run(
+      user_id || 1, title, target_hours
+    );
+    res.json({ success: true });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -133,8 +260,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`VibeFuse server running on http://localhost:${PORT}`);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Z-Pulse server running on http://localhost:${PORT}`);
   });
 }
 

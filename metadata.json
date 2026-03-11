@@ -1,5 +1,5 @@
 {
-  "name": "VibeFuse",
-  "description": "A dynamic music streaming and discovery platform for the next generation of music lovers and creators, starting in Lusaka, Zambia.",
+  "name": "Z-Pulse",
+  "description": "The ultimate Afro-Brutalist music & culture platform for Gen Z in Zambia and Malawi. Connect, create, and hustle.",
   "requestFramePermissions": ["microphone"]
 }

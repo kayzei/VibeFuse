@@ -1,565 +1,743 @@
 import React from 'react';
-import { Home, Search, Library, Mic2, Radio, PlusSquare, Heart, Play, SkipBack, SkipForward, Repeat, Shuffle, Volume2, MoreHorizontal, User, Sparkles, Wand2, DollarSign, TrendingUp, BarChart3, X } from 'lucide-react';
+import { 
+  Home, Search, Library, Mic2, Radio, PlusSquare, Heart, Play, 
+  SkipBack, SkipForward, Repeat, Shuffle, Volume2, MoreHorizontal, 
+  User, Sparkles, Wand2, DollarSign, TrendingUp, BarChart3, X, 
+  MessageSquare, Target, Globe, Send, Music, Calendar, Newspaper,
+  BadgeCheck, Users, Link as LinkIcon, LogOut
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Track } from './types';
-import { identifySong, getRecommendations } from './services/geminiService';
+import { Track, NjebelePost, Goal } from './types';
+import { usePlayer } from './context/PlayerContext';
+import { identifySong, getRecommendations, getLyrics } from './services/geminiService';
+
+// --- Components ---
 
 const SidebarItem = ({ icon: Icon, label, active = false, onClick }: { icon: React.ElementType, label: string, active?: boolean, onClick?: () => void }) => (
   <div 
     onClick={onClick}
-    className={`flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors ${active ? 'text-vibe-blue' : 'text-zinc-400 hover:text-white'}`}
+    className={`flex items-center gap-4 px-6 py-4 cursor-pointer transition-all border-l-4 ${active ? 'bg-zed-green/10 border-zed-green text-zed-green' : 'border-transparent text-zinc-500 hover:text-zed-white hover:bg-white/5'}`}
   >
-    <Icon size={24} />
-    <span className="font-medium">{label}</span>
+    <Icon size={24} strokeWidth={active ? 3 : 2} />
+    <span className={`font-display font-bold uppercase tracking-tight ${active ? 'text-lg' : 'text-base'}`}>{label}</span>
   </div>
 );
 
-const TrackCard = ({ track, onPlay }: { track: Track, onPlay: (t: Track) => void, key?: React.Key }) => (
-  <motion.div 
-    whileHover={{ y: -5 }}
-    className="bg-zinc-900/50 p-4 rounded-xl hover:bg-zinc-800/50 transition-all group cursor-pointer"
-    onClick={() => onPlay(track)}
-  >
-    <div className="relative aspect-square mb-4 overflow-hidden rounded-lg">
-      <img 
-        src={track.cover_url} 
-        alt={track.title} 
-        className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500"
-        referrerPolicy="no-referrer"
-      />
-      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-        <div className="w-12 h-12 rounded-full vibe-gradient flex items-center justify-center shadow-lg">
-          <Play fill="white" size={24} />
-        </div>
-      </div>
-      {track.plays > 0 && (
-        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1">
-          <TrendingUp size={10} className="text-vibe-green" />
-          {track.plays}
-        </div>
-      )}
-    </div>
-    <h3 className="font-bold truncate">{track.title}</h3>
-    <p className="text-sm text-zinc-400 truncate">{track.artist}</p>
-  </motion.div>
+const BrutalCard = ({ children, className = "" }: { children: React.ReactNode, className?: string, key?: React.Key }) => (
+  <div className={`brutal-card ${className}`}>
+    {children}
+  </div>
 );
 
-const TipModal = ({ artistName, onClose, onSuccess }: { artistName: string, onClose: () => void, onSuccess: () => void }) => {
-  const [amount, setAmount] = React.useState('5');
-  const [message, setMessage] = React.useState('');
-  const [isProcessing, setIsProcessing] = React.useState(false);
-
-  const handleTip = async () => {
-    setIsProcessing(true);
-    // Simulate payment processing
-    await new Promise(r => setTimeout(r, 1500));
-    
-    await fetch('/api/artists/tip', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        artist_name: artistName,
-        amount: parseFloat(amount),
-        sender_name: 'VibeFuse User',
-        message
-      })
-    });
-    
-    setIsProcessing(false);
-    onSuccess();
-    onClose();
-  };
+const TrackCard = ({ track }: { track: Track, key?: React.Key }) => {
+  const { playTrack, currentTrack, isPlaying } = usePlayer();
+  const active = currentTrack?.id === track.id;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <motion.div 
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-md"
-      >
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">Support {artistName}</h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X /></button>
-        </div>
-        
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-bold text-zinc-400 mb-2 uppercase tracking-widest">Amount (ZMW)</label>
-            <div className="grid grid-cols-3 gap-3">
-              {['5', '20', '50', '100', '200', '500'].map(val => (
-                <button 
-                  key={val}
-                  onClick={() => setAmount(val)}
-                  className={`py-3 rounded-xl font-bold transition-all ${amount === val ? 'vibe-gradient text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
-                >
-                  K{val}
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-bold text-zinc-400 mb-2 uppercase tracking-widest">Message (Optional)</label>
-            <textarea 
-              className="w-full bg-zinc-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-vibe-blue transition-all"
-              placeholder="Say something nice..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-            />
-          </div>
-
-          <button 
-            onClick={handleTip}
-            disabled={isProcessing}
-            className="w-full py-4 rounded-xl vibe-gradient font-bold text-lg hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
-          >
-            {isProcessing ? (
-              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+    <motion.div 
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      className={`relative group cursor-pointer border-2 p-4 transition-all ${active ? 'border-zed-green bg-zed-green/5' : 'border-zed-white hover:border-zed-purple'}`}
+      onClick={() => playTrack(track)}
+    >
+      <div className="relative aspect-square mb-4 overflow-hidden border-2 border-zed-white">
+        <img 
+          src={track.cover_url} 
+          alt={track.title} 
+          className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-700"
+          referrerPolicy="no-referrer"
+        />
+        <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${active ? 'bg-zed-green/20 opacity-100' : 'bg-black/60 opacity-0 group-hover:opacity-100'}`}>
+          <div className={`w-16 h-16 flex items-center justify-center border-4 border-zed-white bg-zed-black shadow-[4px_4px_0px_0px_white]`}>
+            {active && isPlaying ? (
+              <div className="flex gap-1 items-end h-6">
+                <motion.div animate={{ height: [8, 24, 8] }} transition={{ repeat: Infinity, duration: 0.5 }} className="w-1.5 bg-zed-green" />
+                <motion.div animate={{ height: [12, 18, 12] }} transition={{ repeat: Infinity, duration: 0.7 }} className="w-1.5 bg-zed-green" />
+                <motion.div animate={{ height: [16, 10, 16] }} transition={{ repeat: Infinity, duration: 0.6 }} className="w-1.5 bg-zed-green" />
+              </div>
             ) : (
-              <>
-                <DollarSign size={20} />
-                Send Tip
-              </>
+              <Play fill="white" size={32} />
             )}
-          </button>
-          <p className="text-center text-xs text-zinc-500">Secure payment powered by VibeFuse Pay</p>
+          </div>
         </div>
-      </motion.div>
-    </div>
+      </div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="font-display font-black text-xl truncate mb-1">{track.title}</h3>
+          <div className="flex items-center gap-1">
+            <p className="font-mono text-sm text-zinc-400 uppercase truncate">{track.artist}</p>
+            {track.is_verified && <BadgeCheck size={14} className="text-zed-green flex-shrink-0" />}
+          </div>
+        </div>
+      </div>
+      
+      {track.plays > 0 && (
+        <div className="absolute top-6 right-6 bg-zed-green text-zed-black px-2 py-1 font-mono text-[10px] font-black border-2 border-zed-black shadow-[2px_2px_0px_0px_black]">
+          {track.plays} PLAYS
+        </div>
+      )}
+    </motion.div>
   );
 };
 
+const SyncPanel = () => {
+  const { roomCode, createRoom, joinRoom, leaveRoom } = usePlayer();
+  const [inputCode, setInputCode] = React.useState('');
+
+  return (
+    <BrutalCard className="border-zed-green bg-zed-black">
+      <div className="flex items-center gap-3 mb-4">
+        <Users className="text-zed-green" size={24} />
+        <h3 className="text-xl font-black">VIBE-SYNC</h3>
+      </div>
+      
+      {!roomCode ? (
+        <div className="space-y-4">
+          <button 
+            onClick={createRoom}
+            className="w-full py-2 bg-zed-green text-zed-black font-black border-2 border-zed-black shadow-[4px_4px_0px_0px_black] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+          >
+            CREATE ROOM
+          </button>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="ROOM CODE" 
+              className="flex-1 bg-transparent border-2 border-zed-white px-3 py-2 font-bold focus:border-zed-green focus:ring-0 uppercase"
+              value={inputCode}
+              onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+            />
+            <button 
+              onClick={() => joinRoom(inputCode)}
+              className="px-4 bg-zed-purple text-zed-white font-black border-2 border-zed-black shadow-[4px_4px_0px_0px_black]"
+            >
+              JOIN
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="p-3 border-2 border-dashed border-zed-green bg-zed-green/5 text-center">
+            <p className="text-xs font-mono text-zinc-500 mb-1">YOUR ROOM CODE</p>
+            <p className="text-3xl font-black tracking-widest text-zed-green">{roomCode}</p>
+          </div>
+          <button 
+            onClick={leaveRoom}
+            className="w-full py-2 bg-zed-orange text-zed-white font-black border-2 border-zed-black shadow-[4px_4px_0px_0px_black] flex items-center justify-center gap-2"
+          >
+            <LogOut size={16} /> LEAVE SESSION
+          </button>
+        </div>
+      )}
+    </BrutalCard>
+  );
+};
+
+// --- Main App ---
+
 export default function App() {
-  const [view, setView] = React.useState<'home' | 'charts' | 'dashboard'>('home');
+  const { currentTrack, isPlaying, togglePlay, nextTrack, prevTrack } = usePlayer();
+  const [view, setView] = React.useState<'home' | 'njebele' | 'hustle' | 'discovery' | 'charts' | 'dashboard'>('home');
   const [tracks, setTracks] = React.useState<Track[]>([]);
-  const [currentTrack, setCurrentTrack] = React.useState<Track | null>(null);
-  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [njebelePosts, setNjebelePosts] = React.useState<NjebelePost[]>([]);
+  const [goals, setGoals] = React.useState<Goal[]>([]);
+  const [lyrics, setLyrics] = React.useState<{time: number, text: string}[]>([]);
+  const [showLyrics, setShowLyrics] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isIdentifying, setIsIdentifying] = React.useState(false);
-  const [aiRecs, setAiRecs] = React.useState<{title: string, artist: string}[]>([]);
-  const [showTipModal, setShowTipModal] = React.useState<string | null>(null);
-  const [artistStats, setArtistStats] = React.useState<{plays: number, tips: any[], totalTips: number} | null>(null);
 
-  const fetchTracks = () => {
-    fetch('/api/tracks')
-      .then(res => res.json())
-      .then(setTracks);
+  const [userBadges, setUserBadges] = React.useState<string[]>([]);
+
+  // Fetch Data
+  const fetchData = async () => {
+    const [tRes, nRes, gRes, bRes] = await Promise.all([
+      fetch('/api/tracks'),
+      fetch('/api/njebele'),
+      fetch('/api/goals'),
+      fetch('/api/user/1/badges')
+    ]);
+    setTracks(await tRes.json());
+    setNjebelePosts(await nRes.json());
+    setGoals(await gRes.json());
+    setUserBadges(await bRes.json());
   };
 
   React.useEffect(() => {
-    fetchTracks();
+    fetchData();
   }, []);
 
-  const handlePlay = async (track: Track) => {
-    setCurrentTrack(track);
-    setIsPlaying(true);
-    await fetch(`/api/tracks/${track.id}/play`, { method: 'POST' });
-    fetchTracks(); // Refresh to show updated play counts
-  };
+  // Sync Lyrics
+  React.useEffect(() => {
+    if (currentTrack) {
+      getLyrics(currentTrack.title, currentTrack.artist).then(setLyrics);
+    }
+  }, [currentTrack]);
 
   const handleIdentify = async () => {
     setIsIdentifying(true);
     const result = await identifySong();
-    // Simulate finding it in our DB or just showing a toast
-    alert(`VibeFuse identified: ${result.title} by ${result.artist}\n\nFun Fact: ${result.funFact}`);
+    alert(`Z-PULSE IDENTIFIED: ${result.title} by ${result.artist}\n\nZED FACT: ${result.funFact}`);
     setIsIdentifying(false);
   };
 
-  const handleGetRecs = async () => {
-    if (tracks.length === 0) return;
-    const history = tracks.slice(0, 3).map(t => `${t.title} by ${t.artist}`);
-    const recs = await getRecommendations(history);
-    setAiRecs(recs);
+  const handlePostNjebele = async (content: string) => {
+    await fetch('/api/njebele', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, username: 'ZedViber', track_id: currentTrack?.id })
+    });
+    fetchData();
   };
 
-  const filteredTracks = tracks.filter(t => 
-    t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.artist.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const localTracks = tracks.filter(t => t.is_local);
-
   return (
-    <div className="flex h-screen bg-black text-white overflow-hidden">
+    <div className="flex h-screen bg-zed-black text-zed-white overflow-hidden font-sans selection:bg-zed-green selection:text-zed-black">
       {/* Sidebar */}
-      <aside className="w-64 bg-zinc-950 flex flex-col border-r border-zinc-800">
-        <div className="p-6">
-          <h1 className="text-2xl font-black tracking-tighter vibe-gradient bg-clip-text text-transparent italic">VIBEFUSE</h1>
+      <aside className="w-72 bg-zed-black border-r-4 border-zed-white flex flex-col z-30">
+        <div className="p-8 border-b-4 border-zed-white">
+          <h1 className="text-5xl font-black tracking-tighter italic leading-none">
+            Z-PULSE
+            <span className="block text-xs font-mono not-italic tracking-widest text-zed-green mt-2">AFRO-BRUTALIST OS v1.0</span>
+          </h1>
         </div>
         
-        <nav className="flex-1">
+        <nav className="flex-1 py-4 overflow-y-auto">
           <SidebarItem icon={Home} label="Home" active={view === 'home'} onClick={() => setView('home')} />
-          <SidebarItem icon={TrendingUp} label="Lusaka Pulse" active={view === 'charts'} onClick={() => setView('charts')} />
-          <SidebarItem icon={BarChart3} label="Artist Dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
-          <SidebarItem icon={Library} label="Your Library" />
+          <SidebarItem icon={MessageSquare} label="Njebele" active={view === 'njebele'} onClick={() => setView('njebele')} />
+          <SidebarItem icon={Target} label="Hustle" active={view === 'hustle'} onClick={() => setView('hustle')} />
+          <SidebarItem icon={Globe} label="Discovery" active={view === 'discovery'} onClick={() => setView('discovery')} />
+          <SidebarItem icon={TrendingUp} label="Charts" active={view === 'charts'} onClick={() => setView('charts')} />
           
-          <div className="mt-8 px-6 mb-4">
-            <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Playlists</h2>
+          <div className="mt-8 px-8 mb-4">
+            <h2 className="text-xs font-mono font-black text-zinc-500 uppercase tracking-widest">Your Space</h2>
           </div>
-          <SidebarItem icon={PlusSquare} label="Create Playlist" />
-          <SidebarItem icon={Heart} label="Liked Songs" />
-          <SidebarItem icon={Radio} label="Live Sessions" />
-          <SidebarItem icon={Mic2} label="Lusaka Local" />
+          <SidebarItem icon={Heart} label="Liked" />
+          <SidebarItem icon={Library} label="Library" />
+          <SidebarItem icon={BarChart3} label="Dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
         </nav>
 
-        <div className="p-4">
-          <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
-            <p className="text-xs font-bold text-vibe-blue mb-1">PREMIUM</p>
-            <p className="text-sm font-medium mb-3">Get ad-free music & offline mode.</p>
-            <button className="w-full py-2 rounded-lg vibe-gradient text-sm font-bold">Upgrade Now</button>
+          <div className="p-6 border-t-4 border-zed-white space-y-4">
+            <SyncPanel />
+            <BrutalCard className="bg-zed-purple border-zed-black shadow-[4px_4px_0px_0px_#000]">
+              <p className="text-xs font-black mb-1">GO PRO</p>
+              <p className="text-sm font-bold leading-tight mb-3">Support local talent & get offline mode.</p>
+              <button className="w-full py-2 bg-zed-black text-zed-white font-black text-xs border-2 border-zed-white hover:bg-zed-green hover:text-zed-black transition-colors">UPGRADE</button>
+            </BrutalCard>
           </div>
-        </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-gradient-to-b from-zinc-900 to-black pb-32">
-        <header className="sticky top-0 z-10 bg-zinc-900/80 backdrop-blur-md p-6 flex items-center justify-between">
-          <div className="flex-1 max-w-xl">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
+      <main className="flex-1 overflow-y-auto relative pb-32">
+        {/* Background Marquee */}
+        <div className="fixed inset-0 flex flex-col justify-around opacity-5 pointer-events-none z-0">
+          <div className="marquee-text animate-pulse">LUSAKA ZAMBIA LUSAKA ZAMBIA</div>
+          <div className="marquee-text animate-pulse delay-700">HUSTLE HARD HUSTLE HARD</div>
+          <div className="marquee-text animate-pulse delay-1000">Z-PULSE VIBES Z-PULSE VIBES</div>
+        </div>
+
+        <header className="sticky top-0 z-20 bg-zed-black/90 backdrop-blur-sm border-b-4 border-zed-white p-6 flex items-center justify-between">
+          <div className="flex-1 max-w-2xl">
+            <div className="relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zed-white group-focus-within:text-zed-green" size={24} />
               <input 
                 type="text" 
-                placeholder="Search for artists, songs, or vibes..."
-                className="w-full bg-zinc-800 border-none rounded-full py-2 pl-12 pr-4 focus:ring-2 focus:ring-vibe-blue transition-all"
+                placeholder="SEARCH THE VIBE..."
+                className="w-full bg-transparent border-4 border-zed-white py-3 pl-14 pr-6 font-display font-bold text-xl focus:border-zed-green focus:ring-0 transition-all placeholder:text-zinc-700"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6 ml-8">
             <button 
               onClick={handleIdentify}
               disabled={isIdentifying}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm transition-all ${isIdentifying ? 'bg-zinc-800 text-zinc-500' : 'bg-vibe-purple hover:scale-105'}`}
+              className={`brutal-border-orange px-6 py-3 font-display font-black text-sm flex items-center gap-2 transition-all active:translate-x-1 active:translate-y-1 active:shadow-none ${isIdentifying ? 'opacity-50' : 'hover:bg-zed-orange hover:text-zed-white'}`}
             >
-              <Sparkles size={18} className={isIdentifying ? 'animate-spin' : ''} />
-              {isIdentifying ? 'Listening...' : 'Identify Vibe'}
+              <Sparkles size={20} className={isIdentifying ? 'animate-spin' : ''} />
+              {isIdentifying ? 'LISTENING...' : 'IDENTIFY'}
             </button>
-            <button className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors">
-              <User size={24} />
-            </button>
+            <div className="w-14 h-14 border-4 border-zed-white bg-zed-purple flex items-center justify-center shadow-[4px_4px_0px_0px_white] cursor-pointer hover:bg-zed-green transition-colors">
+              <User size={32} />
+            </div>
           </div>
         </header>
 
-        <div className="p-8">
-          {view === 'home' && (
-            <>
-              {/* Hero Section */}
-              {!searchQuery && (
-                <section className="mb-12">
-                  <div className="vibe-gradient rounded-3xl p-8 relative overflow-hidden group">
-                    <div className="relative z-10">
-                      <h2 className="text-5xl font-black mb-4 tracking-tight">Lusaka Pulse</h2>
-                      <p className="text-xl mb-6 opacity-90 max-w-md">Discover the hottest tracks trending right now in the heart of Zambia.</p>
+        <div className="p-10 relative z-10">
+          <AnimatePresence mode="wait">
+            {view === 'home' && (
+              <motion.div 
+                key="home"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-16"
+              >
+                {/* Hero */}
+                <section>
+                  <div className="brutal-border-green bg-zed-green p-10 flex flex-col md:flex-row items-center gap-10">
+                    <div className="flex-1">
+                      <h2 className="text-8xl font-black leading-[0.8] mb-6 text-zed-black">LUSAKA<br/>PULSE</h2>
+                      <p className="text-2xl font-bold text-zed-black mb-8 max-w-lg leading-tight">The raw sound of the streets. No filters, just pure Zed energy.</p>
                       <button 
                         onClick={() => setView('charts')}
-                        className="bg-white text-black px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform"
+                        className="bg-zed-black text-zed-white px-10 py-4 font-display font-black text-xl border-4 border-zed-white shadow-[8px_8px_0px_0px_white] hover:bg-zed-purple transition-all active:translate-x-1 active:translate-y-1 active:shadow-none"
                       >
-                        Listen Now
+                        EXPLORE CHARTS
                       </button>
                     </div>
-                    <div className="absolute right-0 top-0 h-full w-1/2 opacity-20 pointer-events-none">
-                       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
+                    <div className="w-full md:w-1/3 aspect-square border-8 border-zed-black bg-zed-purple flex items-center justify-center shadow-[16px_16px_0px_0px_black]">
+                      <TrendingUp size={120} strokeWidth={3} className="text-zed-black" />
                     </div>
                   </div>
                 </section>
-              )}
 
-              {/* AI Recommendations */}
-              <section className="mb-12">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-2xl font-bold">AI Vibe Picks</h2>
-                    <Wand2 size={20} className="text-vibe-pink" />
+                {/* AI Recs */}
+                <section>
+                  <div className="flex items-center gap-4 mb-8">
+                    <Wand2 size={40} className="text-zed-purple" />
+                    <h2 className="text-4xl font-black">AI VIBE PICKS</h2>
                   </div>
-                  <button 
-                    onClick={handleGetRecs}
-                    className="text-sm font-bold text-vibe-blue hover:underline uppercase tracking-widest"
-                  >
-                    Refresh Recs
-                  </button>
-                </div>
-                {aiRecs.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {aiRecs.map((rec, i) => (
-                      <motion.div 
-                        key={i}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                        className="bg-zinc-900/80 p-6 rounded-2xl border border-white/5 flex items-center gap-4"
-                      >
-                        <div className="w-12 h-12 rounded-full vibe-gradient-alt flex items-center justify-center flex-shrink-0">
-                          <Sparkles size={20} />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    {tracks.slice(0, 3).map((track) => (
+                      <BrutalCard key={`vibe-${track.id}`} className="border-zed-purple">
+                        <div className="flex items-center gap-4">
+                          <div className="w-16 h-16 border-2 border-zed-white overflow-hidden">
+                            <img src={track.cover_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                          <div>
+                            <h3 className="font-display font-bold text-lg">{track.title}</h3>
+                            <p className="font-mono text-xs text-zinc-500 uppercase">{track.artist}</p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="font-bold">{rec.title}</h3>
-                          <p className="text-sm text-zinc-400">{rec.artist}</p>
-                        </div>
-                      </motion.div>
+                      </BrutalCard>
                     ))}
                   </div>
-                ) : (
-                  <div className="bg-zinc-900/30 border border-dashed border-zinc-800 rounded-2xl p-12 text-center">
-                    <p className="text-zinc-500 mb-4">Let our AI curate your next favorite track.</p>
-                    <button 
-                      onClick={handleGetRecs}
-                      className="px-6 py-2 rounded-full border border-vibe-blue text-vibe-blue font-bold hover:bg-vibe-blue hover:text-black transition-all"
-                    >
-                      Generate Recommendations
-                    </button>
-                  </div>
-                )}
-              </section>
+                </section>
 
-              {/* Local Artists */}
-              <section className="mb-12">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold">Lusaka Local</h2>
-                  <button className="text-sm font-bold text-zinc-400 hover:text-white uppercase tracking-widest">Show all</button>
+                {/* Local Grid */}
+                <section>
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-4xl font-black">LUSAKA LOCAL</h2>
+                    <button className="font-mono font-black text-zed-green hover:underline">VIEW ALL</button>
+                  </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-8">
+                    {tracks.filter(t => t.is_local).map(track => (
+                      <TrackCard key={`local-${track.id}`} track={track} />
+                    ))}
+                  </div>
+                </section>
+              </motion.div>
+            )}
+
+            {view === 'njebele' && (
+              <motion.div 
+                key="njebele"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-3xl mx-auto space-y-10"
+              >
+                <div className="brutal-border-orange bg-zed-orange p-8 text-zed-black">
+                  <h2 className="text-6xl font-black mb-2">NJEBELE</h2>
+                  <p className="text-xl font-bold uppercase tracking-tight">Shout out the vibe. Real talk, real music.</p>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                  {localTracks.map(track => (
-                    <div key={track.id} className="relative group">
-                      <TrackCard track={track} onPlay={handlePlay} />
+
+                <div className="brutal-card border-zed-green">
+                  <textarea 
+                    placeholder="WHA'S THE VIBE?"
+                    className="w-full bg-transparent border-none p-0 text-2xl font-bold focus:ring-0 placeholder:text-zinc-800 h-32"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handlePostNjebele(e.currentTarget.value);
+                        e.currentTarget.value = '';
+                      }
+                    }}
+                  />
+                  <div className="flex justify-between items-center mt-4 pt-4 border-t-2 border-zed-white/20">
+                    <div className="flex gap-4">
+                      <button className="text-zinc-500 hover:text-zed-green"><Mic2 size={24} /></button>
+                      <button className="text-zinc-500 hover:text-zed-green"><Music size={24} /></button>
+                    </div>
+                    <button className="bg-zed-green text-zed-black px-6 py-2 font-black text-sm border-2 border-zed-black shadow-[4px_4px_0px_0px_black]">POST</button>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  {njebelePosts.map(post => (
+                    <motion.div 
+                      key={`post-${post.id}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="brutal-card"
+                    >
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 border-2 border-zed-white bg-zed-purple flex items-center justify-center font-black">
+                            {post.username[0]}
+                          </div>
+                          <div>
+                            <p className="font-black text-zed-green">@{post.username.toUpperCase()}</p>
+                            <p className="text-[10px] font-mono text-zinc-500">{new Date(post.timestamp).toLocaleString()}</p>
+                          </div>
+                        </div>
+                        <MoreHorizontal className="text-zinc-500" />
+                      </div>
+                      <p className="text-xl font-bold leading-tight mb-4">{post.content}</p>
+                      {post.track_id && (
+                        <div className="bg-white/5 p-3 border-l-4 border-zed-purple flex items-center gap-3">
+                          <Music size={16} className="text-zed-purple" />
+                          <p className="text-xs font-mono font-bold">LISTENING TO: ZED_TRACK_{post.track_id}</p>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'hustle' && (
+              <motion.div 
+                key="hustle"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="space-y-12"
+              >
+                <div className="brutal-border bg-zed-purple p-10">
+                  <h2 className="text-7xl font-black mb-4">HUSTLE MODE</h2>
+                  <p className="text-2xl font-bold max-w-2xl">Track your study sessions, gym grinds, and creative sprints. Music that keeps you moving.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                  <div className="lg:col-span-1 space-y-8">
+                    <BrutalCard className="border-zed-green">
+                      <h3 className="text-2xl font-black mb-6">NEW GOAL</h3>
+                      <div className="space-y-4">
+                        <input type="text" placeholder="GOAL TITLE" className="w-full bg-transparent border-2 border-zed-white p-3 font-bold focus:border-zed-green focus:ring-0" />
+                        <input type="number" placeholder="TARGET HOURS" className="w-full bg-transparent border-2 border-zed-white p-3 font-bold focus:border-zed-green focus:ring-0" />
+                        <button className="w-full py-3 bg-zed-green text-zed-black font-black border-2 border-zed-black shadow-[4px_4px_0px_0px_black]">START HUSTLE</button>
+                      </div>
+                    </BrutalCard>
+                    
+                    <BrutalCard className="bg-zed-black border-zed-orange">
+                      <h3 className="text-xl font-black mb-2 text-zed-orange">HUSTLE STATS</h3>
+                      <div className="space-y-4">
+                        <div className="flex justify-between font-mono text-sm">
+                          <span>TOTAL HUSTLE</span>
+                          <span className="text-zed-green">124.5 HRS</span>
+                        </div>
+                        <div className="flex justify-between font-mono text-sm">
+                          <span>RANK</span>
+                          <span className="text-zed-purple">LSK_HUSTLER</span>
+                        </div>
+                      </div>
+                    </BrutalCard>
+                  </div>
+
+                  <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {goals.map(goal => (
+                      <BrutalCard key={`goal-${goal.id}`} className={goal.status === 'completed' ? 'opacity-50 grayscale' : ''}>
+                        <div className="flex justify-between items-start mb-6">
+                          <h3 className="text-2xl font-black leading-none">{goal.title}</h3>
+                          <Target className={goal.status === 'completed' ? 'text-zinc-500' : 'text-zed-green'} />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between font-mono text-xs">
+                            <span>PROGRESS</span>
+                            <span>{Math.round((goal.current_hours / goal.target_hours) * 100)}%</span>
+                          </div>
+                          <div className="h-6 border-2 border-zed-white bg-white/5 p-1">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${(goal.current_hours / goal.target_hours) * 100}%` }}
+                              className="h-full bg-zed-green"
+                            />
+                          </div>
+                          <div className="flex justify-between font-mono text-[10px] text-zinc-500">
+                            <span>{goal.current_hours} HRS</span>
+                            <span>{goal.target_hours} HRS</span>
+                          </div>
+                        </div>
+                      </BrutalCard>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'dashboard' && (
+              <motion.div 
+                key="dashboard"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-12"
+              >
+                <div className="brutal-border bg-zed-green p-10 text-zed-black">
+                  <div className="flex items-center gap-6 mb-4">
+                    <div className="w-24 h-24 border-4 border-zed-black bg-zed-purple flex items-center justify-center shadow-[8px_8px_0px_0px_black]">
+                      <User size={64} />
+                    </div>
+                    <div>
+                      <h2 className="text-6xl font-black leading-none">ZED_VIBER</h2>
+                      <p className="text-xl font-bold uppercase">LSK Resident • Premium Member</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4 flex-wrap">
+                    {userBadges.map((badge, i) => (
+                      <div key={i} className="bg-zed-black text-zed-white px-4 py-2 border-2 border-zed-white font-black text-sm flex items-center gap-2 shadow-[4px_4px_0px_0px_white]">
+                        <BadgeCheck size={18} className="text-zed-green" />
+                        {badge}
+                      </div>
+                    ))}
+                    {userBadges.length === 0 && <p className="font-mono text-sm italic opacity-60">No badges earned yet. Start the hustle!</p>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <BrutalCard className="border-zed-purple">
+                    <h3 className="text-2xl font-black mb-6">ARTIST VERIFICATION</h3>
+                    <p className="text-zinc-400 mb-6">Are you a creator? Claim your profile to get the verified badge and unlock artist analytics.</p>
+                    <div className="space-y-4">
+                      <input type="text" placeholder="ARTIST NAME" className="w-full bg-transparent border-2 border-zed-white p-3 font-bold focus:border-zed-green focus:ring-0" />
                       <button 
-                        onClick={(e) => { e.stopPropagation(); setShowTipModal(track.artist); }}
-                        className="absolute bottom-20 right-6 w-8 h-8 rounded-full bg-vibe-green text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:scale-110"
+                        onClick={async () => {
+                          const name = prompt("Enter artist name to verify:");
+                          if (name) {
+                            await fetch('/api/artists/verify', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ artistName: name })
+                            });
+                            fetchData();
+                            alert(`${name} is now verified!`);
+                          }
+                        }}
+                        className="w-full py-3 bg-zed-purple text-zed-white font-black border-2 border-zed-black shadow-[4px_4px_0px_0px_black]"
                       >
-                        <DollarSign size={16} />
+                        CLAIM PROFILE
                       </button>
                     </div>
-                  ))}
-                </div>
-              </section>
+                  </BrutalCard>
 
-              {/* Live Sessions */}
-              <section className="mb-12">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold">Live Sessions</h2>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                    <span className="text-xs font-bold text-red-500 uppercase tracking-widest">Live Now</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="relative h-48 rounded-2xl overflow-hidden group cursor-pointer">
-                    <img src="https://picsum.photos/seed/live1/800/400" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent p-6 flex flex-col justify-end">
-                      <h3 className="text-xl font-bold">Chef 187: Unplugged</h3>
-                      <p className="text-sm text-zinc-300">Live from Lusaka • 1.2k watching</p>
-                    </div>
-                  </div>
-                  <div className="relative h-48 rounded-2xl overflow-hidden group cursor-pointer">
-                    <img src="https://picsum.photos/seed/live2/800/400" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent p-6 flex flex-col justify-end">
-                      <h3 className="text-xl font-bold">Cleo Ice Queen: Studio Vibes</h3>
-                      <p className="text-sm text-zinc-300">Live from Ndola • 850 watching</p>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* Global Hits */}
-              <section>
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold">Global Vibes</h2>
-                  <button className="text-sm font-bold text-zinc-400 hover:text-white uppercase tracking-widest">Show all</button>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                  {tracks.filter(t => !t.is_local).map(track => (
-                    <TrackCard key={track.id} track={track} onPlay={handlePlay} />
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-
-          {view === 'charts' && (
-            <section className="max-w-4xl mx-auto">
-              <div className="flex items-end gap-8 mb-12">
-                <div className="w-48 h-48 vibe-gradient rounded-2xl shadow-2xl flex items-center justify-center">
-                  <TrendingUp size={80} className="text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-2">Playlist</h2>
-                  <h1 className="text-7xl font-black tracking-tight mb-4">Lusaka Pulse</h1>
-                  <p className="text-zinc-400">The most played tracks in Lusaka right now. Updated every hour.</p>
-                </div>
-              </div>
-
-              <div className="bg-zinc-900/50 rounded-3xl overflow-hidden border border-zinc-800">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="text-zinc-500 text-xs uppercase tracking-widest border-b border-zinc-800">
-                      <th className="p-4 w-12 text-center">#</th>
-                      <th className="p-4">Title</th>
-                      <th className="p-4">Album</th>
-                      <th className="p-4 text-right">Plays</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tracks.sort((a, b) => b.plays - a.plays).map((track, i) => (
-                      <tr 
-                        key={track.id} 
-                        onClick={() => handlePlay(track)}
-                        className="group hover:bg-white/5 transition-colors cursor-pointer border-b border-zinc-800/50 last:border-none"
-                      >
-                        <td className="p-4 text-center text-zinc-500 font-mono">{i + 1}</td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-4">
-                            <img src={track.cover_url} className="w-10 h-10 rounded object-cover" referrerPolicy="no-referrer" />
-                            <div>
-                              <div className="font-bold group-hover:text-vibe-blue transition-colors">{track.title}</div>
-                              <div className="text-sm text-zinc-400">{track.artist}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-4 text-sm text-zinc-400">{track.album}</td>
-                        <td className="p-4 text-right font-mono text-vibe-green">{track.plays}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-
-          {view === 'dashboard' && (
-            <section className="max-w-6xl mx-auto">
-              <div className="flex items-center justify-between mb-12">
-                <h1 className="text-4xl font-black tracking-tight">Artist Dashboard</h1>
-                <div className="flex gap-4">
-                  <select 
-                    className="bg-zinc-800 border-none rounded-xl px-4 py-2 text-sm font-bold"
-                    onChange={async (e) => {
-                      const res = await fetch(`/api/artists/${e.target.value}/stats`);
-                      const data = await res.json();
-                      setArtistStats(data);
-                    }}
-                  >
-                    <option value="">Select Artist Profile</option>
-                    {Array.from(new Set(tracks.map(t => t.artist))).map(a => (
-                      <option key={a} value={a}>{a}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {artistStats ? (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-1 space-y-8">
-                    <div className="bg-zinc-900 p-8 rounded-3xl border border-zinc-800">
-                      <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2">Total Plays</p>
-                      <h3 className="text-5xl font-black text-vibe-blue">{artistStats.plays}</h3>
-                    </div>
-                    <div className="bg-zinc-900 p-8 rounded-3xl border border-zinc-800">
-                      <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2">Total Tips</p>
-                      <h3 className="text-5xl font-black text-vibe-green">K{artistStats.totalTips.toFixed(2)}</h3>
-                    </div>
-                  </div>
-                  
-                  <div className="lg:col-span-2">
-                    <div className="bg-zinc-900 rounded-3xl border border-zinc-800 overflow-hidden">
-                      <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
-                        <h3 className="font-bold">Recent Tips</h3>
-                        <DollarSign className="text-vibe-green" />
+                  <BrutalCard className="border-zed-orange">
+                    <h3 className="text-2xl font-black mb-6">HUSTLE SUMMARY</h3>
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono text-sm">ACTIVE GOALS</span>
+                        <span className="text-2xl font-black">{goals.filter(g => g.status === 'active').length}</span>
                       </div>
-                      <div className="divide-y divide-zinc-800">
-                        {artistStats.tips.length > 0 ? artistStats.tips.map((tip, i) => (
-                          <div key={i} className="p-6 flex justify-between items-start">
-                            <div>
-                              <p className="font-bold">{tip.sender_name}</p>
-                              <p className="text-sm text-zinc-400 italic">"{tip.message}"</p>
-                              <p className="text-[10px] text-zinc-600 mt-2 uppercase">{new Date(tip.timestamp).toLocaleString()}</p>
-                            </div>
-                            <div className="text-vibe-green font-black text-xl">+K{tip.amount}</div>
-                          </div>
-                        )) : (
-                          <div className="p-12 text-center text-zinc-500">No tips received yet. Keep vibing!</div>
-                        )}
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono text-sm">COMPLETED</span>
+                        <span className="text-2xl font-black text-zed-green">{goals.filter(g => g.status === 'completed').length}</span>
+                      </div>
+                      <div className="pt-4 border-t-2 border-zed-white/10">
+                        <button onClick={() => setView('hustle')} className="text-zed-orange font-black hover:underline">MANAGE GOALS →</button>
                       </div>
                     </div>
+                  </BrutalCard>
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'discovery' && (
+              <motion.div 
+                key="discovery"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-16"
+              >
+                <div className="flex items-center gap-6">
+                  <Globe size={60} className="text-zed-green" />
+                  <h2 className="text-7xl font-black">DISCOVERY HUB</h2>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                  {/* News */}
+                  <div className="lg:col-span-2 space-y-10">
+                    <h3 className="text-3xl font-black flex items-center gap-3">
+                      <Newspaper className="text-zed-orange" />
+                      LATEST NEWS
+                    </h3>
+                    <div className="space-y-8">
+                      {[1, 2].map(i => (
+                        <div key={`news-${i}`} className="flex flex-col md:flex-row gap-8 group cursor-pointer">
+                          <div className="w-full md:w-64 aspect-video border-4 border-zed-white overflow-hidden flex-shrink-0">
+                            <img src={`https://picsum.photos/seed/news${i}/600/400`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
+                          </div>
+                          <div>
+                            <div className="flex gap-2 mb-2">
+                              <span className="bg-zed-purple text-zed-white px-2 py-0.5 text-[10px] font-black">CULTURE</span>
+                              <span className="text-[10px] font-mono text-zinc-500">MARCH 11, 2026</span>
+                            </div>
+                            <h4 className="text-2xl font-black leading-tight mb-3 group-hover:text-zed-green transition-colors">
+                              {i === 1 ? "HOW ZAMBIAN GEN Z IS RECLAIMING AFRO-BEATS" : "THE RISE OF LUSAKA'S UNDERGROUND SYNTH SCENE"}
+                            </h4>
+                            <p className="text-zinc-400 line-clamp-2">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua...</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Gig Guide */}
+                  <div className="lg:col-span-1 space-y-10">
+                    <h3 className="text-3xl font-black flex items-center gap-3">
+                      <Calendar className="text-zed-purple" />
+                      GIG GUIDE
+                    </h3>
+                    <div className="space-y-6">
+                      {[1, 2, 3].map(i => (
+                        <BrutalCard key={`gig-${i}`} className="p-4 border-zed-white hover:border-zed-green">
+                          <div className="flex gap-4">
+                            <div className="w-16 h-16 bg-zed-white text-zed-black flex flex-col items-center justify-center font-black leading-none">
+                              <span className="text-xs">MAR</span>
+                              <span className="text-2xl">{15 + i}</span>
+                            </div>
+                            <div>
+                              <h4 className="font-black text-lg leading-none mb-1">Z-PULSE LIVE @ LSK</h4>
+                              <p className="text-xs font-mono text-zinc-500">MANDA HILL • 20:00</p>
+                              <button className="mt-3 text-[10px] font-black text-zed-green hover:underline">GET TICKETS</button>
+                            </div>
+                          </div>
+                        </BrutalCard>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="bg-zinc-900/30 border border-dashed border-zinc-800 rounded-3xl p-24 text-center">
-                  <BarChart3 size={48} className="mx-auto text-zinc-700 mb-4" />
-                  <p className="text-zinc-500">Select an artist profile to view analytics and tips.</p>
-                </div>
-              )}
-            </section>
-          )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </main>
 
       {/* Player Bar */}
       <AnimatePresence>
-        {showTipModal && (
-          <TipModal 
-            artistName={showTipModal} 
-            onClose={() => setShowTipModal(null)} 
-            onSuccess={() => alert('Tip sent! Your support means the world to the artist.')}
-          />
-        )}
         {currentTrack && (
           <motion.footer 
-            initial={{ y: 100 }}
+            initial={{ y: 150 }}
             animate={{ y: 0 }}
-            className="fixed bottom-0 left-0 right-0 bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-800 p-4 z-20"
+            className="fixed bottom-0 left-0 right-0 bg-zed-black border-t-4 border-zed-white p-6 z-40"
           >
-            <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-8">
+            <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-12">
               {/* Track Info */}
-              <div className="flex items-center gap-4 w-1/3">
-                <img 
-                  src={currentTrack.cover_url} 
-                  alt={currentTrack.title} 
-                  className="w-14 h-14 rounded-lg object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="min-w-0">
-                  <h4 className="font-bold truncate">{currentTrack.title}</h4>
-                  <p className="text-xs text-zinc-400 truncate">{currentTrack.artist}</p>
+              <div className="flex items-center gap-6 w-1/4">
+                <div 
+                  className="w-20 h-20 border-4 border-zed-white cursor-pointer group relative overflow-hidden"
+                  onClick={() => setShowLyrics(!showLyrics)}
+                >
+                  <img 
+                    src={currentTrack.cover_url} 
+                    alt={currentTrack.title} 
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-zed-green/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <MessageSquare size={32} className="text-zed-black" />
+                  </div>
                 </div>
-                <button className="text-zinc-400 hover:text-vibe-pink transition-colors">
-                  <Heart size={20} />
-                </button>
+                <div className="min-w-0">
+                  <h4 className="text-2xl font-black truncate leading-none mb-1">{currentTrack.title}</h4>
+                  <p className="font-mono text-xs text-zinc-500 uppercase">{currentTrack.artist}</p>
+                </div>
               </div>
 
               {/* Controls */}
-              <div className="flex flex-col items-center gap-2 flex-1">
-                <div className="flex items-center gap-6">
-                  <button className="text-zinc-400 hover:text-white transition-colors"><Shuffle size={20} /></button>
-                  <button className="text-zinc-400 hover:text-white transition-colors"><SkipBack size={24} /></button>
+              <div className="flex flex-col items-center gap-4 flex-1">
+                <div className="flex items-center gap-10">
+                  <button className="text-zinc-500 hover:text-zed-white transition-colors"><Shuffle size={24} /></button>
+                  <button onClick={prevTrack} className="text-zinc-500 hover:text-zed-white transition-colors"><SkipBack size={32} /></button>
                   <button 
-                    onClick={() => setIsPlaying(!isPlaying)}
-                    className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform"
+                    onClick={togglePlay}
+                    className="w-16 h-16 border-4 border-zed-white bg-zed-white text-zed-black flex items-center justify-center hover:bg-zed-green transition-colors shadow-[4px_4px_0px_0px_#8A2BE2]"
                   >
-                    {isPlaying ? <div className="flex gap-1"><div className="w-1 h-4 bg-black"></div><div className="w-1 h-4 bg-black"></div></div> : <Play fill="black" size={20} className="ml-1" />}
+                    {isPlaying ? <div className="flex gap-1.5"><div className="w-2 h-6 bg-zed-black"></div><div className="w-2 h-6 bg-zed-black"></div></div> : <Play fill="black" size={32} className="ml-1" />}
                   </button>
-                  <button className="text-zinc-400 hover:text-white transition-colors"><SkipForward size={24} /></button>
-                  <button className="text-zinc-400 hover:text-white transition-colors"><Repeat size={20} /></button>
+                  <button onClick={nextTrack} className="text-zinc-500 hover:text-zed-white transition-colors"><SkipForward size={32} /></button>
+                  <button className="text-zinc-500 hover:text-zed-white transition-colors"><Repeat size={24} /></button>
                 </div>
-                <div className="w-full max-w-md flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500">0:00</span>
-                  <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden group cursor-pointer">
-                    <div className="h-full w-1/3 vibe-gradient group-hover:bg-vibe-blue transition-colors"></div>
+                <div className="w-full max-w-2xl flex items-center gap-4">
+                  <span className="font-mono text-[10px] text-zinc-500">1:24</span>
+                  <div className="flex-1 h-3 border-2 border-zed-white bg-white/5 p-0.5">
+                    <div className="h-full w-1/3 bg-zed-green" />
                   </div>
-                  <span className="text-[10px] text-zinc-500">3:45</span>
+                  <span className="font-mono text-[10px] text-zinc-500">3:45</span>
                 </div>
               </div>
 
               {/* Volume & Extras */}
-              <div className="flex items-center justify-end gap-4 w-1/3">
-                <button className="text-zinc-400 hover:text-white transition-colors"><Mic2 size={20} /></button>
-                <button className="text-zinc-400 hover:text-white transition-colors"><Volume2 size={20} /></button>
-                <div className="w-24 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                  <div className="h-full w-2/3 bg-zinc-400"></div>
+              <div className="flex items-center justify-end gap-6 w-1/4">
+                <button 
+                  onClick={() => setShowLyrics(!showLyrics)}
+                  className={`transition-colors ${showLyrics ? 'text-zed-green' : 'text-zinc-500 hover:text-zed-white'}`}
+                >
+                  <MessageSquare size={24} />
+                </button>
+                <div className="flex items-center gap-3 group">
+                  <Volume2 size={24} className="text-zinc-500 group-hover:text-zed-white" />
+                  <div className="w-24 h-2 border-2 border-zed-white bg-white/5">
+                    <div className="h-full w-2/3 bg-zed-white" />
+                  </div>
                 </div>
-                <button className="text-zinc-400 hover:text-white transition-colors"><MoreHorizontal size={20} /></button>
+                <button className="text-zinc-500 hover:text-zed-white transition-colors"><MoreHorizontal size={24} /></button>
               </div>
             </div>
           </motion.footer>
+        )}
+      </AnimatePresence>
+
+      {/* Lyrics Overlay */}
+      <AnimatePresence>
+        {showLyrics && currentTrack && (
+          <motion.div 
+            initial={{ opacity: 0, y: '100%' }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed inset-0 z-50 bg-zed-black flex flex-col"
+          >
+            <header className="p-8 flex justify-between items-center border-b-4 border-zed-white">
+              <div className="flex items-center gap-6">
+                <div className="w-16 h-16 border-4 border-zed-white">
+                  <img src={currentTrack.cover_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black leading-none">{currentTrack.title}</h2>
+                  <p className="font-mono text-sm text-zed-green uppercase">{currentTrack.artist}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowLyrics(false)}
+                className="w-14 h-14 border-4 border-zed-white flex items-center justify-center hover:bg-zed-orange transition-colors"
+              >
+                <X size={32} />
+              </button>
+            </header>
+            
+            <div className="flex-1 overflow-y-auto p-10 md:p-20 space-y-12 text-center">
+              {lyrics.map((line, i) => (
+                <motion.p 
+                  key={`lyric-${i}`}
+                  initial={{ opacity: 0.2 }}
+                  animate={{ opacity: i === 2 ? 1 : 0.2, scale: i === 2 ? 1.1 : 1 }}
+                  className={`text-4xl md:text-7xl font-black uppercase tracking-tighter leading-tight ${i === 2 ? 'text-zed-green' : 'text-zed-white'}`}
+                >
+                  {line.text}
+                </motion.p>
+              ))}
+            </div>
+
+            <footer className="p-10 border-t-4 border-zed-white flex justify-center">
+              <div className="flex items-center gap-12">
+                 <button onClick={prevTrack} className="text-zed-white hover:text-zed-green transition-colors"><SkipBack size={48} /></button>
+                 <button 
+                    onClick={togglePlay}
+                    className="w-24 h-24 border-4 border-zed-white bg-zed-white text-zed-black flex items-center justify-center hover:bg-zed-green transition-colors shadow-[8px_8px_0px_0px_#8A2BE2]"
+                  >
+                    {isPlaying ? <div className="flex gap-2"><div className="w-3 h-10 bg-zed-black"></div><div className="w-3 h-10 bg-zed-black"></div></div> : <Play fill="black" size={48} className="ml-2" />}
+                  </button>
+                 <button onClick={nextTrack} className="text-zed-white hover:text-zed-green transition-colors"><SkipForward size={48} /></button>
+              </div>
+            </footer>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

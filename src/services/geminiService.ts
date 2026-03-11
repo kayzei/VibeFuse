@@ -39,3 +39,23 @@ export async function getRecommendations(history: string[]) {
     return [];
   }
 }
+
+export async function getLyrics(title: string, artist: string) {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Generate synchronized lyrics for the song "${title}" by "${artist}". The song is a popular Zambian hit. Format the output as a JSON array of objects with keys: time (in seconds) and text. Make it feel authentic to the Zambian music scene.`,
+    config: {
+      responseMimeType: "application/json"
+    }
+  });
+
+  try {
+    return JSON.parse(response.text);
+  } catch (e) {
+    return [
+      { time: 0, text: "[Music playing]" },
+      { time: 5, text: "Yeah, Z-Pulse vibes..." },
+      { time: 10, text: "Lusaka to the world!" }
+    ];
+  }
+}
