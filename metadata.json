@@ -1,0 +1,5 @@
+{
+  "name": "VibeFuse",
+  "description": "A dynamic music streaming and discovery platform for the next generation of music lovers and creators, starting in Lusaka, Zambia.",
+  "requestFramePermissions": ["microphone"]
+}

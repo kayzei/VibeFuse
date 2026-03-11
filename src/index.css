@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-vibe-blue: #00f2ff;
+  --color-vibe-pink: #ff00ff;
+  --color-vibe-orange: #ff8c00;
+  --color-vibe-green: #39ff14;
+  --color-vibe-purple: #9d00ff;
+}
+
+@layer base {
+  body {
+    @apply bg-black text-white font-sans;
+  }
+}
+
+.vibe-gradient {
+  background: linear-gradient(135deg, var(--color-vibe-blue) 0%, var(--color-vibe-pink) 100%);
+}
+
+.vibe-gradient-alt {
+  background: linear-gradient(135deg, var(--color-vibe-orange) 0%, var(--color-vibe-green) 100%);
+}
+
+.vibe-glass {
+  @apply bg-white/10 backdrop-blur-md border border-white/20;
+}
