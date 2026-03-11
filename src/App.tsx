@@ -147,6 +147,7 @@ export default function App() {
   const [isIdentifying, setIsIdentifying] = React.useState(false);
 
   const [userBadges, setUserBadges] = React.useState<string[]>([]);
+  const [njebeleContent, setNjebeleContent] = React.useState('');
 
   // Fetch Data
   const fetchData = async () => {
@@ -345,11 +346,15 @@ export default function App() {
                   <textarea 
                     placeholder="WHA'S THE VIBE?"
                     className="w-full bg-transparent border-none p-0 text-2xl font-bold focus:ring-0 placeholder:text-zinc-800 h-32"
+                    value={njebeleContent}
+                    onChange={(e) => setNjebeleContent(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        handlePostNjebele(e.currentTarget.value);
-                        e.currentTarget.value = '';
+                        if (njebeleContent.trim()) {
+                          handlePostNjebele(njebeleContent);
+                          setNjebeleContent('');
+                        }
                       }
                     }}
                   />
@@ -358,7 +363,17 @@ export default function App() {
                       <button className="text-zinc-500 hover:text-zed-green"><Mic2 size={24} /></button>
                       <button className="text-zinc-500 hover:text-zed-green"><Music size={24} /></button>
                     </div>
-                    <button className="bg-zed-green text-zed-black px-6 py-2 font-black text-sm border-2 border-zed-black shadow-[4px_4px_0px_0px_black]">POST</button>
+                    <button 
+                      onClick={() => {
+                        if (njebeleContent.trim()) {
+                          handlePostNjebele(njebeleContent);
+                          setNjebeleContent('');
+                        }
+                      }}
+                      className="bg-zed-green text-zed-black px-6 py-2 font-black text-sm border-2 border-zed-black shadow-[4px_4px_0px_0px_black]"
+                    >
+                      POST
+                    </button>
                   </div>
                 </div>
 
